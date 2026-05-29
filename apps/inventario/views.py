@@ -1,5 +1,6 @@
 from django.db import models as django_models
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiResponse, inline_serializer
+from rest_framework import serializers as drf_serializers, status
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -93,6 +94,11 @@ class DispositivoDetailView(RetrieveUpdateDestroyAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@extend_schema_view(
+    get=extend_schema(tags=["Inventario"], responses={200: OpenApiResponse(description="Datos de la subtabla segun el tipo de dispositivo (computadora, impresora, monitor, etc.).")}, summary="Obtiene la subtabla del dispositivo"),
+    put=extend_schema(tags=["Inventario"], request=OpenApiResponse(description="Datos de la subtabla."), responses={200: OpenApiResponse(description="Subtabla actualizada.")}, summary="Reemplaza la subtabla del dispositivo"),
+    patch=extend_schema(tags=["Inventario"], request=OpenApiResponse(description="Campos a actualizar."), responses={200: OpenApiResponse(description="Subtabla actualizada.")}, summary="Actualiza parcialmente la subtabla"),
+)
 class SubtablaView(APIView):
     """GET/PUT/PATCH para la subtabla específica de un dispositivo."""
     permission_classes = [IsAuthenticated, EsInformatica]
@@ -167,6 +173,12 @@ class BienBajaDetailView(RetrieveUpdateDestroyAPIView):
     http_method_names = ["get", "patch", "head", "options"]
 
 
+@extend_schema(
+    tags=["Bajas"],
+    request=inline_serializer("FotoUpload", {"archivo": drf_serializers.ImageField(), "slot": drf_serializers.IntegerField()}),
+    responses={201: OpenApiResponse(description="Foto adjuntada al bien de baja.")},
+    summary="Sube una foto de un bien de baja",
+)
 class BienBajaFotoView(APIView):
     """Subir foto a un bien de baja."""
     permission_classes = [IsAuthenticated, EsInformatica]

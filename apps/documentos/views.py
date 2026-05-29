@@ -2,7 +2,8 @@ import os
 from django.core.files.base import ContentFile
 from django.http import FileResponse
 from django.utils import timezone
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, OpenApiResponse, inline_serializer
+from rest_framework import serializers as drf_serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,6 +16,16 @@ from .pdf_generator import generar_pdf_ticket
 ESTADOS_GENERABLES = {EstadoTicket.SOLUCIONADO, EstadoTicket.FINALIZADO}
 
 
+@extend_schema(
+    tags=["Documentos"],
+    request=None,
+    responses={
+        200: inline_serializer("DocumentoGenerado", {"url": drf_serializers.URLField(), "numero_documento": drf_serializers.CharField()}),
+        400: OpenApiResponse(description="Ticket no está en estado terminal."),
+        404: OpenApiResponse(description="Ticket no encontrado."),
+    },
+    summary="Genera o recupera el PDF oficial del ticket",
+)
 class GenerarDocumentoView(APIView):
     """
     POST /tickets/{id}/documento/
@@ -65,6 +76,11 @@ class GenerarDocumentoView(APIView):
         })
 
 
+@extend_schema(
+    tags=["Documentos"],
+    responses={200: OpenApiResponse(description="Archivo PDF (application/pdf).")},
+    summary="Descarga el PDF oficial del ticket",
+)
 class DescargarDocumentoView(APIView):
     """
     GET /documentos/{id}/descargar/

@@ -1,7 +1,8 @@
 from django.contrib.auth import authenticate
 from django.conf import settings
 from django.utils import timezone
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiResponse, inline_serializer
+from rest_framework import serializers as drf_serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -106,6 +107,7 @@ class LoginView(APIView):
         return response
 
 
+@extend_schema(tags=["Autenticacion"], request=None, responses={200: OpenApiResponse(description="Sesion cerrada. Cookies borradas.")}, summary="Cierra sesion y elimina las cookies JWT")
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -127,6 +129,7 @@ class LogoutView(APIView):
         return response
 
 
+@extend_schema(tags=["Autenticacion"], request=None, responses={200: OpenApiResponse(description="Nuevo access token seteado en cookie.")}, summary="Renueva el access token usando la cookie de refresh")
 class TokenRefreshCookieView(APIView):
     """Emite nuevo access token leyendo el refresh token desde la cookie."""
     permission_classes = [AllowAny]
@@ -223,6 +226,10 @@ class UserProfileDetailView(RetrieveUpdateAPIView):
         return super().get_serializer(*args, **kwargs)
 
 
+@extend_schema_view(
+    get=extend_schema(tags=["Usuarios"], responses=EncargadoActivoSerializer(many=True), summary="Lista encargados activos e historicos"),
+    post=extend_schema(tags=["Usuarios"], request=EncargadoActivoSerializer, responses={201: EncargadoActivoSerializer}, summary="Crea un nuevo encargado temporal"),
+)
 class EncargadoActivoListCreateView(APIView):
     """Lista encargados activos y permite crear uno nuevo (solo JEFE/ADMIN)."""
     permission_classes = [IsAuthenticated, EsJefe]
@@ -246,6 +253,11 @@ class EncargadoActivoListCreateView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema_view(
+    get=extend_schema(tags=["Usuarios"], responses=EncargadoActivoSerializer, summary="Detalle de un encargado"),
+    patch=extend_schema(tags=["Usuarios"], request=EncargadoActivoSerializer, responses=EncargadoActivoSerializer, summary="Actualiza datos del encargado"),
+    delete=extend_schema(tags=["Usuarios"], responses={204: None}, summary="Desactiva el encargado temporal"),
+)
 class EncargadoActivoDetailView(APIView):
     """Detalle y desactivación de un encargado (solo JEFE/ADMIN)."""
     permission_classes = [IsAuthenticated, EsJefe]

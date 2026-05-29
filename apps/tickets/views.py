@@ -1,5 +1,6 @@
 from django.utils import timezone
-from rest_framework import status
+from drf_spectacular.utils import extend_schema, OpenApiResponse, inline_serializer
+from rest_framework import serializers as drf_serializers, status
 from rest_framework.generics import ListCreateAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -83,6 +84,7 @@ class TicketDetailView(RetrieveAPIView):
         return qs
 
 
+@extend_schema(tags=["Tickets"], request=TransicionSerializer, responses={200: TicketDetailSerializer}, summary="Cambia el estado de un ticket")
 class TicketTransicionView(APIView):
     """
     POST /tickets/{id}/transicion/
@@ -176,6 +178,7 @@ class TicketTransicionView(APIView):
         return Response(TicketDetailSerializer(ticket).data)
 
 
+@extend_schema(tags=["Tickets"], request=TicketDiagnosticoSerializer, responses={201: TicketDiagnosticoSerializer}, summary="Registra el diagnóstico técnico del ticket")
 class TicketDiagnosticoView(APIView):
     """POST crea diagnóstico y dispara la transición de estado automática."""
     permission_classes = [IsAuthenticated, EsInformatica]
@@ -225,6 +228,7 @@ class TicketDiagnosticoView(APIView):
         return Response(TicketDiagnosticoSerializer(diagnostico).data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema(tags=["Tickets"], request=TicketAccionSerializer, responses={201: TicketAccionSerializer})
 class TicketAccionView(APIView):
     """Registro de acciones realizadas durante la atención."""
     permission_classes = [IsAuthenticated, EsInformatica]
@@ -242,6 +246,7 @@ class TicketAccionView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema(tags=["Tickets"], request=TicketTercerizadoSerializer, responses={201: TicketTercerizadoSerializer})
 class TicketTercerizadoView(APIView):
     """Registra o actualiza el info de tercerización."""
     permission_classes = [IsAuthenticated, EsJefeOEncargado]
@@ -263,6 +268,11 @@ class TicketTercerizadoView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema(
+    tags=["Tickets"],
+    request=inline_serializer("AdjuntoUpload", {"archivo": drf_serializers.FileField()}),
+    responses={201: OpenApiResponse(description="Adjunto subido correctamente.")},
+)
 class TicketAdjuntoView(APIView):
     """Subir adjunto a un ticket."""
     permission_classes = [IsAuthenticated]

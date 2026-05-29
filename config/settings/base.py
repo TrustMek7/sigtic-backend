@@ -158,10 +158,40 @@ JWT_COOKIE_PATH = "/"
 # ──────────────────────────────────────────────
 SPECTACULAR_SETTINGS = {
     "TITLE": "SIGTIC API",
-    "DESCRIPTION": "Sistema de Gestión de Tickets TI — Municipalidad",
+    "DESCRIPTION": (
+        "## Sistema de Gestión de Tickets TI — Unidad de Informática Municipal\n\n"
+        "### Autenticación\n"
+        "Esta API usa **JWT en httpOnly cookies** (no headers). "
+        "Llama primero a `POST /api/v1/auth/login/` con `{username, password}`. "
+        "El servidor responde seteando las cookies `sigtic_access` y `sigtic_refresh` automáticamente.\n\n"
+        "Desde Swagger UI activa **'Include credentials'** (candado) para que las cookies se envíen.\n\n"
+        "### Flujo de estados de ticket\n"
+        "`ENVIADO > EN_REVISION > ASIGNADO > EN_ATENCION > SOLUCIONADO | EN_MANTENIMIENTO | TERCERIZADO > FINALIZADO`\n\n"
+        "Desde cualquier estado no terminal: `> RECHAZADO` (solo JEFE_INFO / ENCARGADO_INFO activo)."
+    ),
     "VERSION": "2.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    "SORT_OPERATIONS": False,
+    "ENUM_NAME_OVERRIDES": {
+        "EstadoTicketEnum":       "apps.tickets.models.EstadoTicket",
+        "EstadoDispositivoEnum":  "apps.inventario.models.EstadoDispositivo",
+        "RolSigticEnum":          "apps.users.models.RolSigtic",
+    },
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        "config.spectacular_hooks.assign_tags_by_path",
+    ],
+    "SWAGGER_UI_SETTINGS": {
+        "deepLinking": True,
+        "persistAuthorization": True,
+        "displayOperationId": False,
+        "defaultModelsExpandDepth": 1,
+        "defaultModelExpandDepth": 2,
+        "docExpansion": "list",
+        "filter": True,
+        "tryItOutEnabled": True,
+    },
 }
 
 # ──────────────────────────────────────────────
