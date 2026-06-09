@@ -23,7 +23,7 @@ class TicketListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "numero", "estado", "estado_display",
             "dispositivo", "dispositivo_cod",
-            "solicitante_nombre", "tecnico_nombre",
+            "solicitante_nombre", "tecnico", "tecnico_nombre",
             "tipo_mantenimiento", "fecha_creacion",
         ]
 

@@ -6,8 +6,10 @@ from .views import (
     MeView,
     UserProfileListView,
     UserProfileDetailView,
+    UsuariosDelegablesView,
     EncargadoActivoListCreateView,
     EncargadoActivoDetailView,
+    EncargadoActivoView,
 )
 
 urlpatterns = [
@@ -19,8 +21,10 @@ urlpatterns = [
 
     # User management
     path("users/", UserProfileListView.as_view(), name="user-list"),
+    path("users/delegables/", UsuariosDelegablesView.as_view(), name="user-delegables"),
     path("users/<int:pk>/", UserProfileDetailView.as_view(), name="user-detail"),
 
     path("encargados/", EncargadoActivoListCreateView.as_view(), name="encargado-list"),
+    path("encargados/activo/", EncargadoActivoView.as_view(), name="encargado-activo"),
     path("encargados/<int:pk>/", EncargadoActivoDetailView.as_view(), name="encargado-detail"),
 ]

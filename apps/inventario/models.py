@@ -290,6 +290,85 @@ class BienBaja(models.Model):
             raise ValidationError("Debe ingresar descripción para dispositivos sin registro.")
 
 
+class EstadoTraslado(models.TextChoices):
+    PENDIENTE = "PENDIENTE", "Pendiente"
+    APROBADO  = "APROBADO",  "Aprobado"
+    EJECUTADO = "EJECUTADO", "Ejecutado"
+    RECHAZADO = "RECHAZADO", "Rechazado"
+
+
+class Traslado(models.Model):
+    """
+    Registra el movimiento de un dispositivo entre sedes/áreas/responsables.
+    Al ejecutarse, actualiza los campos de ubicación del Dispositivo.
+    """
+    numero     = models.CharField(max_length=20, unique=True, db_index=True, editable=False)
+    dispositivo = models.ForeignKey(Dispositivo, on_delete=models.PROTECT, related_name="traslados")
+    estado     = models.CharField(
+        max_length=10, choices=EstadoTraslado.choices,
+        default=EstadoTraslado.PENDIENTE, db_index=True,
+    )
+
+    # Snapshot de origen (capturado al crear el traslado)
+    sede_origen        = models.ForeignKey("organizacion.Sede", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    area_origen        = models.ForeignKey("organizacion.UnidadOrganica", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    subger_origen      = models.ForeignKey("organizacion.Subgerencia", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    depend_origen      = models.ForeignKey("organizacion.Dependencia", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    responsable_origen = models.ForeignKey("users.UserProfile", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    # Destino declarado
+    sede_destino        = models.ForeignKey("organizacion.Sede", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    area_destino        = models.ForeignKey("organizacion.UnidadOrganica", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    subger_destino      = models.ForeignKey("organizacion.Subgerencia", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    depend_destino      = models.ForeignKey("organizacion.Dependencia", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    responsable_destino = models.ForeignKey("users.UserProfile", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    motivo      = models.TextField()
+    observacion = models.TextField(blank=True)
+
+    solicitado_por   = models.ForeignKey("users.UserProfile", on_delete=models.PROTECT, related_name="traslados_solicitados")
+    aprobado_por     = models.ForeignKey("users.UserProfile", null=True, blank=True, on_delete=models.SET_NULL, related_name="traslados_aprobados")
+
+    fecha_solicitud  = models.DateTimeField(auto_now_add=True)
+    fecha_aprobacion = models.DateTimeField(null=True, blank=True)
+    fecha_ejecucion  = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-fecha_solicitud"]
+        verbose_name = "Traslado"
+        verbose_name_plural = "Traslados"
+
+    def __str__(self):
+        return f"{self.numero} — {self.dispositivo.cod_inventario}"
+
+    @classmethod
+    def _generar_numero(cls):
+        from django.utils import timezone
+        year = timezone.now().year
+        prefix = f"TRL-{year}-"
+        last = cls.objects.filter(numero__startswith=prefix).order_by("-numero").first()
+        seq = int(last.numero.split("-")[-1]) + 1 if last else 1
+        return f"{prefix}{seq:04d}"
+
+    def ejecutar(self, aprobado_por=None):
+        """Aplica el traslado: actualiza ubicación del dispositivo."""
+        from django.utils import timezone
+        disp = self.dispositivo
+        disp.sede            = self.sede_destino
+        disp.unidad_organica = self.area_destino
+        disp.subgerencia     = self.subger_destino
+        disp.dependencia     = self.depend_destino
+        disp.responsable     = self.responsable_destino
+        disp.save(update_fields=["sede", "unidad_organica", "subgerencia", "dependencia", "responsable"])
+
+        self.estado          = EstadoTraslado.EJECUTADO
+        self.fecha_ejecucion = timezone.now()
+        if aprobado_por and not self.aprobado_por:
+            self.aprobado_por     = aprobado_por
+            self.fecha_aprobacion = timezone.now()
+        self.save(update_fields=["estado", "fecha_ejecucion", "aprobado_por", "fecha_aprobacion"])
+
+
 class BienBajaFoto(models.Model):
     bien_baja = models.ForeignKey(BienBaja, on_delete=models.CASCADE, related_name="fotos")
     archivo = models.ImageField(upload_to="bajas/fotos/%Y/%m/")

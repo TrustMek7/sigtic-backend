@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Dispositivo, DispComputadora, DispImpresora, DispMonitor,
     DispPeriferico, DispRed, DispCamara, DispTelefono,
-    BienBaja, BienBajaFoto,
+    BienBaja, BienBajaFoto, Traslado, EstadoTraslado,
 )
 
 
@@ -148,3 +148,123 @@ class BienBajaSerializer(serializers.ModelSerializer):
         from apps.users.permissions import _get_profile
         validated_data["registrado_por"] = _get_profile(request)
         return super().create(validated_data)
+
+
+# ── Traslados ─────────────────────────────────────────────────────────────────
+
+class TrasladoListSerializer(serializers.ModelSerializer):
+    dispositivo_cod  = serializers.CharField(source="dispositivo.cod_inventario", read_only=True)
+    dispositivo_tipo = serializers.CharField(source="dispositivo.tipo_dispositivo.nombre", read_only=True)
+    dispositivo_modelo = serializers.CharField(source="dispositivo.modelo", read_only=True)
+    sede_origen_nombre   = serializers.CharField(source="sede_origen.nombre",   default="—", read_only=True)
+    sede_destino_nombre  = serializers.CharField(source="sede_destino.nombre",  default="—", read_only=True)
+    area_origen_nombre   = serializers.CharField(source="area_origen.nombre",   default="—", read_only=True)
+    area_destino_nombre  = serializers.CharField(source="area_destino.nombre",  default="—", read_only=True)
+    solicitado_por_nombre = serializers.CharField(source="solicitado_por.nombre_completo", read_only=True)
+    estado_display = serializers.CharField(source="get_estado_display", read_only=True)
+
+    class Meta:
+        model = Traslado
+        fields = [
+            "id", "numero", "estado", "estado_display",
+            "dispositivo", "dispositivo_cod", "dispositivo_tipo", "dispositivo_modelo",
+            "sede_origen_nombre", "area_origen_nombre",
+            "sede_destino_nombre", "area_destino_nombre",
+            "solicitado_por_nombre", "fecha_solicitud",
+        ]
+
+
+class TrasladoDetailSerializer(serializers.ModelSerializer):
+    # Origen
+    sede_origen_nombre    = serializers.CharField(source="sede_origen.nombre",        default="—", read_only=True)
+    area_origen_nombre    = serializers.CharField(source="area_origen.nombre",        default="—", read_only=True)
+    subger_origen_nombre  = serializers.CharField(source="subger_origen.nombre",      default="—", read_only=True)
+    depend_origen_nombre  = serializers.CharField(source="depend_origen.nombre",      default="—", read_only=True)
+    resp_origen_nombre    = serializers.CharField(source="responsable_origen.nombre_completo", default="—", read_only=True)
+    # Destino
+    sede_destino_nombre   = serializers.CharField(source="sede_destino.nombre",       default="—", read_only=True)
+    area_destino_nombre   = serializers.CharField(source="area_destino.nombre",       default="—", read_only=True)
+    subger_destino_nombre = serializers.CharField(source="subger_destino.nombre",     default="—", read_only=True)
+    depend_destino_nombre = serializers.CharField(source="depend_destino.nombre",     default="—", read_only=True)
+    resp_destino_nombre   = serializers.CharField(source="responsable_destino.nombre_completo", default="—", read_only=True)
+    # Personas
+    solicitado_por_nombre = serializers.CharField(source="solicitado_por.nombre_completo", read_only=True)
+    aprobado_por_nombre   = serializers.CharField(source="aprobado_por.nombre_completo",  default="—", read_only=True)
+    estado_display        = serializers.CharField(source="get_estado_display", read_only=True)
+    # Dispositivo básico
+    dispositivo_cod       = serializers.CharField(source="dispositivo.cod_inventario", read_only=True)
+    dispositivo_tipo      = serializers.CharField(source="dispositivo.tipo_dispositivo.nombre", read_only=True)
+    dispositivo_modelo    = serializers.CharField(source="dispositivo.modelo", read_only=True)
+    dispositivo_marca     = serializers.CharField(source="dispositivo.marca.nombre", default="—", read_only=True)
+    dispositivo_serie     = serializers.CharField(source="dispositivo.serie", read_only=True)
+
+    class Meta:
+        model = Traslado
+        fields = [
+            "id", "numero", "estado", "estado_display",
+            "dispositivo", "dispositivo_cod", "dispositivo_tipo",
+            "dispositivo_modelo", "dispositivo_marca", "dispositivo_serie",
+            # Origen
+            "sede_origen", "sede_origen_nombre",
+            "area_origen", "area_origen_nombre",
+            "subger_origen", "subger_origen_nombre",
+            "depend_origen", "depend_origen_nombre",
+            "responsable_origen", "resp_origen_nombre",
+            # Destino
+            "sede_destino", "sede_destino_nombre",
+            "area_destino", "area_destino_nombre",
+            "subger_destino", "subger_destino_nombre",
+            "depend_destino", "depend_destino_nombre",
+            "responsable_destino", "resp_destino_nombre",
+            # Meta
+            "motivo", "observacion",
+            "solicitado_por", "solicitado_por_nombre",
+            "aprobado_por", "aprobado_por_nombre",
+            "fecha_solicitud", "fecha_aprobacion", "fecha_ejecucion",
+        ]
+        read_only_fields = [
+            "numero", "estado", "solicitado_por",
+            "fecha_solicitud", "fecha_aprobacion", "fecha_ejecucion",
+        ]
+
+
+class TrasladoWriteSerializer(serializers.ModelSerializer):
+    """Para crear un traslado. El origen se captura automáticamente del dispositivo."""
+    class Meta:
+        model = Traslado
+        fields = [
+            "dispositivo",
+            "sede_destino", "area_destino", "subger_destino",
+            "depend_destino", "responsable_destino",
+            "motivo", "observacion",
+        ]
+
+    def validate_dispositivo(self, dispositivo):
+        if not dispositivo.activo:
+            raise serializers.ValidationError("El dispositivo está dado de baja.")
+        return dispositivo
+
+    def create(self, validated_data):
+        from apps.users.permissions import _get_profile
+        request = self.context["request"]
+        disp = validated_data["dispositivo"]
+
+        traslado = Traslado(
+            **validated_data,
+            # Snapshot del origen
+            sede_origen        = disp.sede,
+            area_origen        = disp.unidad_organica,
+            subger_origen      = disp.subgerencia,
+            depend_origen      = disp.dependencia,
+            responsable_origen = disp.responsable,
+            solicitado_por     = _get_profile(request),
+        )
+        traslado.numero = Traslado._generar_numero()
+        traslado.save()
+        return traslado
+
+
+class TrasladoEstadoSerializer(serializers.Serializer):
+    """Para cambiar el estado de un traslado (APROBADO / EJECUTADO / RECHAZADO)."""
+    estado      = serializers.ChoiceField(choices=["APROBADO", "EJECUTADO", "RECHAZADO"])
+    observacion = serializers.CharField(required=False, allow_blank=True)

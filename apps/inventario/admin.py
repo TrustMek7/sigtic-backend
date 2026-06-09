@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     Dispositivo, DispComputadora, DispImpresora, DispMonitor,
     DispPeriferico, DispRed, DispCamara, DispTelefono,
-    BienBaja, BienBajaFoto,
+    BienBaja, BienBajaFoto, Traslado,
 )
 
 
@@ -63,3 +63,11 @@ class BienBajaAdmin(admin.ModelAdmin):
     list_display = ["id", "dispositivo", "sin_registro", "estado", "fecha", "registrado_por"]
     list_filter = ["estado", "sin_registro"]
     inlines = [BienBajaFotoInline]
+
+
+@admin.register(Traslado)
+class TrasladoAdmin(admin.ModelAdmin):
+    list_display = ["numero", "dispositivo", "estado", "solicitado_por", "fecha_solicitud", "fecha_ejecucion"]
+    list_filter = ["estado"]
+    search_fields = ["numero", "dispositivo__cod_inventario"]
+    readonly_fields = ["numero", "fecha_solicitud", "fecha_aprobacion", "fecha_ejecucion"]

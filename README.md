@@ -1,6 +1,6 @@
-# SIGTIC Backend
+# Gestión Interna de Informática — Backend API
 
-API REST del Sistema de Gestión de Tickets TI — Unidad de Informática Municipal.
+API REST del sistema de gestión de tickets, inventario y almacén para la Unidad de Informática — Municipalidad Distrital de Cayma.
 
 **Stack:** Python 3.13 · Django 4.2 · Django REST Framework · PostgreSQL 15 · SimpleJWT (cookies httpOnly)
 
@@ -22,7 +22,6 @@ API REST del Sistema de Gestión de Tickets TI — Unidad de Informática Munici
 ```bash
 cd sigtic-backend
 
-# Crear y activar venv
 python -m venv .venv
 .venv\Scripts\activate          # Windows
 source .venv/bin/activate       # Linux / Mac
@@ -47,8 +46,6 @@ CREATE DATABASE sigtic_db
 GRANT ALL PRIVILEGES ON DATABASE sigtic_db TO sigtic;
 ```
 
-> **Windows:** si el locale `es_PE.UTF-8` no existe usa `TEMPLATE = template0` sin especificar LC_COLLATE.
-
 ---
 
 ## 3. Variables de entorno
@@ -57,7 +54,7 @@ GRANT ALL PRIVILEGES ON DATABASE sigtic_db TO sigtic;
 cp .env.example .env
 ```
 
-Edita `.env` con las credenciales de tu base de datos:
+Edita `.env` con tus credenciales:
 
 ```ini
 SECRET_KEY=dev-secret-key-cambia-en-produccion
@@ -84,7 +81,6 @@ JWT_COOKIE_SAMESITE=Lax
 ## 4. Migraciones
 
 ```bash
-python manage.py makemigrations --settings=config.settings.development
 python manage.py migrate --settings=config.settings.development
 ```
 
@@ -96,9 +92,9 @@ python manage.py migrate --settings=config.settings.development
 python manage.py createsuperuser --settings=config.settings.development
 ```
 
-Este usuario se autentica con Django auth (no bdsiggo). Al hacer login por primera vez se crea automáticamente un `UserProfile` con rol **ADMIN**.
+Al hacer login por primera vez se crea automáticamente un `UserProfile` con rol **ADMIN**.
 
-**Credenciales de demo:** si usaste `createsuperuser` con usuario `admin`, puedes resetear el password:
+Para resetear la contraseña del superusuario:
 
 ```bash
 python manage.py shell --settings=config.settings.development -c "
@@ -107,7 +103,6 @@ U = get_user_model()
 u = U.objects.get(username='admin')
 u.set_password('admin123')
 u.save()
-print('Password: admin123')
 "
 ```
 
@@ -116,18 +111,60 @@ print('Password: admin123')
 ## 6. Datos de demostración
 
 ```bash
-# Cargar datos de prueba (catálogo, dispositivos, tickets, usuarios, stock)
+# Carga: 7 tipos, 12 marcas, 2 sedes, 7 perfiles, 15 dispositivos, 8 tickets, 5 consumibles
 python manage.py seed_demo --settings=config.settings.development
 
 # Borrar todo y recargar limpio
 python manage.py seed_demo --flush --settings=config.settings.development
 ```
 
-Carga: 7 tipos de dispositivo, 12 marcas, 2 sedes, 7 perfiles con distintos roles, 15 dispositivos (PCs, impresoras, monitores, redes), 8 tickets en distintos estados con historial, 5 consumibles en stock y 2 bienes de baja.
+---
+
+## 7. Migración del inventario real (producción)
+
+Importa los datos históricos desde el JSON exportado de la base de datos MySQL (`database_migration/inventario_bd.json`).
+
+**Prerequisito:** ejecutar las migraciones y `seed_demo` primero para tener el catálogo base.
+
+```bash
+python manage.py shell --settings=config.settings.development < scripts/load_inventario.py
+```
+
+El script carga en orden:
+
+| Paso | Fuente JSON | Destino Django |
+|---|---|---|
+| 1 | `sistema_operativo`, `procesador`, `memoria_ram`, `consumibles` | Catálogo |
+| 2 | `sede`, `area`, `subgerencia`, `dependencia` | Organización |
+| 3 | `trabajadores` | `UserProfile` (asigna rol por cargo) |
+| 4a | `tbl_cpu` | `Dispositivo` + `DispComputadora` |
+| 4b | `tbl_equipos` | `Dispositivo` + subtabla por tipo |
+| 4c | `tbl_impresoras` | `Dispositivo` + `DispImpresora` |
+| 4d | `tbl_telefonos` | `Dispositivo` + `DispTelefono` |
+| 4e | `camaras` | `Dispositivo` + `DispCamara` |
+| 5 | `tbl_almacen` | `StockConsumible` |
+| 6 | `tbl_bienes_baja` | `BienBaja` |
+| 7 | — | Usuarios demo con roles y contraseñas |
+
+Al finalizar imprime un resumen completo y las credenciales demo:
+
+```
+MIGRACIÓN COMPLETADA
+Dispositivos total   : 520
+  Computadoras       : 180
+  Impresoras         : 95
+  ...
+
+CREDENCIALES DEMO:
+  jefe_info       Jefe123!       JEFE_INFO
+  encargado_demo  Encargado123!  ENCARGADO_INFO
+  tecnico_demo    Tecnico123!    TECNICO
+  ...
+```
 
 ---
 
-## 7. Servidor de desarrollo
+## 8. Servidor de desarrollo
 
 ```bash
 python manage.py runserver --settings=config.settings.development
@@ -141,14 +178,14 @@ Disponible en `http://localhost:8000`.
 
 ---
 
-## 8. Estructura del proyecto
+## 9. Estructura del proyecto
 
 ```
 sigtic-backend/
 ├── config/
 │   ├── settings/
 │   │   ├── base.py            # JWT cookies, 2 DBs, CORS, DRF, paginación
-│   │   ├── development.py     # DEBUG=True, CORS sin restricciones, django-extensions
+│   │   ├── development.py     # DEBUG=True, CORS sin restricciones
 │   │   └── production.py      # WhiteNoise, HTTPS, cookies Secure
 │   └── urls.py                # Rutas raíz de la API
 │
@@ -156,53 +193,50 @@ sigtic-backend/
 │   ├── siggo_readonly/        # Modelos managed=False de bdsiggo (solo lectura)
 │   ├── users/
 │   │   ├── backends.py        # SiggoAuthBackend — autentica contra bdsiggo
-│   │   ├── sync.py            # sync_cargos_from_siggo() al login
 │   │   ├── cookie_auth.py     # CookieJWTAuthentication (lee JWT de cookie)
 │   │   ├── permissions.py     # EsInformatica, EsJefeOEncargado, EsJefe, EsAdmin
+│   │   ├── sync.py            # sync_cargos_from_siggo() al login
 │   │   └── views.py           # Login, Logout, Refresh, Me, Users, Encargados
 │   ├── organizacion/          # Sede, UnidadOrganica, Subgerencia, Dependencia
 │   ├── catalogo/              # Marca, TipoDispositivo, SO, Procesador, RAM, Consumible
-│   ├── inventario/            # Dispositivo + 7 subtablas (disp_*) + BienBaja
+│   ├── inventario/            # Dispositivo + 7 subtablas (disp_*) + BienBaja + Traslado
 │   ├── almacen/               # StockConsumible, MovimientoStock
 │   ├── tickets/
 │   │   ├── models.py          # Ticket, TicketHistorial, Diagnostico, Tercerizado…
-│   │   └── management/
-│   │       └── commands/
-│   │           └── seed_demo.py  # Datos de demostración
+│   │   └── management/commands/
+│   │       └── seed_demo.py   # Datos de demostración
 │   └── documentos/            # DocumentoOficial + generador PDF (ReportLab)
 │
 ├── routers/
 │   └── db_router.py           # SiggoRouter: siggo_readonly → bdsiggo, bloquea escrituras
 │
 ├── scripts/
-│   ├── seed_data.py           # Script inicial de datos (usar seed_demo en su lugar)
-│   └── seed_fix.py            # Parche de datos (histórico)
+│   └── load_inventario.py     # Migración histórica desde inventario_bd.json
 │
 ├── requirements/
 │   ├── base.txt               # Django, DRF, SimpleJWT, psycopg2, reportlab…
 │   ├── development.txt        # + ipython, django-extensions
 │   └── production.txt         # + gunicorn, whitenoise
 │
-├── .env.example               # Plantilla de variables de entorno
-├── .gitignore
+├── .env.example
 └── manage.py
 ```
 
 ---
 
-## 9. Endpoints principales
+## 10. Endpoints principales
 
 | Método | Endpoint | Descripción | Roles |
 |---|---|---|---|
 | POST | `/api/v1/auth/login/` | Login → setea cookies JWT | Todos |
 | POST | `/api/v1/auth/logout/` | Cierra sesión, borra cookies | Autenticado |
-| POST | `/api/v1/auth/refresh/` | Renueva access token desde cookie | Todos |
+| POST | `/api/v1/auth/refresh/` | Renueva access token | Todos |
 | GET | `/api/v1/auth/me/` | Perfil del usuario autenticado | Autenticado |
 | GET/PATCH | `/api/v1/auth/users/` | Lista y actualiza roles | IT |
 | GET/POST | `/api/v1/auth/encargados/` | Encargados temporales | JEFE/ADMIN |
 | GET/POST | `/api/v1/tickets/` | Lista y crea tickets | Autenticado |
 | GET | `/api/v1/tickets/{id}/` | Detalle de ticket | Autenticado |
-| POST | `/api/v1/tickets/{id}/transicion/` | Cambia estado del ticket | IT |
+| POST | `/api/v1/tickets/{id}/transicion/` | Cambia estado del ticket | **JEFE/ENCARGADO** |
 | POST | `/api/v1/tickets/{id}/diagnostico/` | Registra diagnóstico técnico | TECNICO+ |
 | POST | `/api/v1/tickets/{id}/documento/` | Genera PDF oficial | JEFE/ADMIN |
 | GET/POST | `/api/v1/inventario/dispositivos/` | Inventario de dispositivos | IT |
@@ -212,10 +246,11 @@ sigtic-backend/
 | GET/POST | `/api/v1/almacen/movimientos/` | Movimientos de stock | IT |
 | GET | `/api/v1/organizacion/sedes/` | Catálogo de sedes | IT |
 | GET | `/api/v1/catalogo/tipos-dispositivo/` | Tipos de dispositivo | IT |
+| GET | `/api/v1/catalogo/consumibles/?q=` | Consumibles (filtro por nombre) | IT |
 
 ---
 
-## 10. Flujo de autenticación
+## 11. Flujo de autenticación
 
 ```
 Frontend POST /api/v1/auth/login/
@@ -233,7 +268,7 @@ Response 200 { id, nombre_completo, rol, rol_display }
 
 ---
 
-## 11. Máquina de estados de tickets
+## 12. Máquina de estados de tickets
 
 ```
 ENVIADO → EN_REVISION → ASIGNADO → EN_ATENCION
@@ -242,14 +277,15 @@ ENVIADO → EN_REVISION → ASIGNADO → EN_ATENCION
                                         └─ TERCERIZADO → TERCERIZADO      → FINALIZADO [terminal]
 
 Desde cualquier estado no terminal:
-    → RECHAZADO  (solo JEFE_INFO / ENCARGADO_INFO activo)              [terminal]
+    → RECHAZADO  (solo JEFE_INFO / ENCARGADO_INFO)   [terminal]
+
+Transiciones de estado: exclusivo JEFE_INFO / ENCARGADO_INFO
+Registro de diagnóstico: TECNICO, JEFE_INFO, ENCARGADO_INFO, ADMIN
 ```
 
 ---
 
-## 12. Conexión a bdsiggo en producción
-
-Cuando tengas acceso al servidor PostgreSQL ~8.x de SIGGO, configura en `.env`:
+## 13. Conexión a bdsiggo en producción
 
 ```ini
 SIGGO_DB_HOST=192.168.x.x
@@ -258,26 +294,25 @@ SIGGO_DB_PASSWORD=password
 SIGGO_PASSWORD_ALGO=md5
 ```
 
-**Notas de compatibilidad PG 8.x:**
-- El router Django bloquea toda escritura a nivel ORM (`RuntimeError` en `db_for_write`)
-- No se usa `default_transaction_read_only` (no soportado en PG 8)
-- Solo SQL básico: sin `RETURNING`, sin CTEs, sin funciones JSON
+**Notas PG 8.x:** el router bloquea toda escritura ORM; sin `RETURNING`, sin CTEs, sin funciones JSON.
 
 ---
 
-## 13. Comandos de referencia rápida
+## 14. Comandos de referencia rápida
 
 ```bash
 # Activar entorno
-.venv\Scripts\activate                          # Windows
-source .venv/bin/activate                       # Linux/Mac
+.venv\Scripts\activate                               # Windows
+source .venv/bin/activate                            # Linux/Mac
 
 # Migraciones
-python manage.py makemigrations --settings=config.settings.development
 python manage.py migrate --settings=config.settings.development
 
 # Datos de demo
 python manage.py seed_demo --flush --settings=config.settings.development
+
+# Migración inventario histórico
+python manage.py shell --settings=config.settings.development < scripts/load_inventario.py
 
 # Servidor
 python manage.py runserver --settings=config.settings.development

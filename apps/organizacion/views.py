@@ -15,6 +15,7 @@ from .serializers import (
 class SedeListView(ListCreateAPIView):
     queryset = Sede.objects.all()
     serializer_class = SedeSerializer
+    pagination_class = None
 
     def get_permissions(self):
         if self.request.method == "GET":
@@ -30,6 +31,7 @@ class SedeDetailView(RetrieveUpdateDestroyAPIView):
 
 class UnidadOrganicaListView(ListCreateAPIView):
     serializer_class = UnidadOrganicaFlatSerializer
+    pagination_class = None
 
     def get_queryset(self):
         return UnidadOrganica.objects.select_related("superior").all()
@@ -48,6 +50,7 @@ class UnidadOrganicaDetailView(RetrieveUpdateDestroyAPIView):
 
 class SubgerenciaListView(ListCreateAPIView):
     serializer_class = SubgerenciaSerializer
+    pagination_class = None
 
     def get_queryset(self):
         qs = Subgerencia.objects.select_related("unidad_organica")
@@ -64,6 +67,7 @@ class SubgerenciaListView(ListCreateAPIView):
 
 class DependenciaListView(ListCreateAPIView):
     serializer_class = DependenciaSerializer
+    pagination_class = None
 
     def get_queryset(self):
         qs = Dependencia.objects.select_related("subgerencia")

@@ -199,3 +199,154 @@ def _estilo_tabla_historial():
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, GRIS_FONDO]),
         ("PADDING", (0, 0), (-1, -1), 3),
     ])
+
+
+# ── PDF de Traslado ───────────────────────────────────────────────────────────
+
+def generar_pdf_traslado(traslado) -> bytes:
+    """
+    Genera el Acta de Traslado de Bien Informático en PDF.
+    Incluye sección de firmas para entrega/recepción.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=2 * cm,
+        leftMargin=2 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+        title=f"Acta de Traslado {traslado.numero}",
+    )
+
+    styles = getSampleStyleSheet()
+    s_titulo = ParagraphStyle("tit", parent=styles["Heading1"], fontSize=13,
+                               textColor=AZUL_INSTITUCIONAL, spaceAfter=2, alignment=1)
+    s_sub    = ParagraphStyle("sub", parent=styles["Heading2"], fontSize=10,
+                               textColor=AZUL_CLARO, spaceBefore=10, spaceAfter=4)
+    s_normal = ParagraphStyle("nor", parent=styles["Normal"], fontSize=9)
+    s_firma  = ParagraphStyle("fir", parent=styles["Normal"], fontSize=8,
+                               alignment=1, textColor=colors.darkgrey)
+    s_pie    = ParagraphStyle("pie", parent=styles["Normal"], fontSize=7,
+                               textColor=colors.gray)
+
+    def _n(obj, attr="nombre"):
+        """Retorna el atributo del objeto o '—'."""
+        return getattr(obj, attr, None) or "—" if obj else "—"
+
+    story = []
+
+    # ── Encabezado ────────────────────────────────────────────────
+    story.append(Paragraph("MUNICIPALIDAD DISTRITAL", s_titulo))
+    story.append(Paragraph("Unidad de Informática y Sistemas", s_titulo))
+    story.append(HRFlowable(width="100%", thickness=2, color=AZUL_INSTITUCIONAL))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(Paragraph("ACTA DE TRASLADO DE BIEN INFORMÁTICO", s_titulo))
+    story.append(Spacer(1, 0.4 * cm))
+
+    # ── Datos del traslado ────────────────────────────────────────
+    fecha_sol = traslado.fecha_solicitud.strftime("%d/%m/%Y %H:%M") if traslado.fecha_solicitud else "—"
+    fecha_apr = traslado.fecha_aprobacion.strftime("%d/%m/%Y") if traslado.fecha_aprobacion else "—"
+    fecha_eje = traslado.fecha_ejecucion.strftime("%d/%m/%Y") if traslado.fecha_ejecucion else "—"
+
+    datos_trl = [
+        ["N° Traslado", traslado.numero,        "Estado", traslado.get_estado_display()],
+        ["Fecha solicitud", fecha_sol,           "Fecha aprobación", fecha_apr],
+        ["Fecha ejecución", fecha_eje,           "Solicitado por", _n(traslado.solicitado_por, "nombre_completo")],
+    ]
+    t = Table(datos_trl, colWidths=[3.5 * cm, 6 * cm, 3.5 * cm, 4 * cm])
+    t.setStyle(_estilo_tabla_info())
+    story.append(t)
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Datos del dispositivo ─────────────────────────────────────
+    story.append(Paragraph("Bien Informático", s_sub))
+    disp = traslado.dispositivo
+    datos_disp = [
+        ["Código inventario", disp.cod_inventario,             "Tipo",    disp.tipo_dispositivo.nombre],
+        ["Marca",            _n(disp.marca),                   "Modelo",  disp.modelo or "—"],
+        ["Serie",            disp.serie or "—",                "Estado",  disp.get_estado_display()],
+    ]
+    t2 = Table(datos_disp, colWidths=[3.5 * cm, 6 * cm, 3.5 * cm, 4 * cm])
+    t2.setStyle(_estilo_tabla_info())
+    story.append(t2)
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Tabla Origen → Destino ────────────────────────────────────
+    story.append(Paragraph("Detalle del Traslado", s_sub))
+    tabla_od = [
+        ["",                 "ORIGEN",                                    "DESTINO"],
+        ["Sede",             _n(traslado.sede_origen),                    _n(traslado.sede_destino)],
+        ["Área / Unidad",    _n(traslado.area_origen),                    _n(traslado.area_destino)],
+        ["Subgerencia",      _n(traslado.subger_origen),                  _n(traslado.subger_destino)],
+        ["Dependencia",      _n(traslado.depend_origen),                  _n(traslado.depend_destino)],
+        ["Responsable",      _n(traslado.responsable_origen, "nombre_completo"),
+                             _n(traslado.responsable_destino, "nombre_completo")],
+    ]
+    t_od = Table(tabla_od, colWidths=[3.5 * cm, 8 * cm, 5.5 * cm])
+    t_od.setStyle(TableStyle([
+        # Encabezado
+        ("BACKGROUND",  (0, 0), (-1, 0),  AZUL_INSTITUCIONAL),
+        ("TEXTCOLOR",   (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",    (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("ALIGN",       (1, 0), (-1, 0),  "CENTER"),
+        # Columna etiquetas
+        ("BACKGROUND",  (0, 1), (0, -1),  GRIS_FONDO),
+        ("FONTNAME",    (0, 1), (0, -1),  "Helvetica-Bold"),
+        # Colores alternos
+        ("ROWBACKGROUNDS", (1, 1), (-1, -1), [colors.white, colors.HexColor("#EBF3FB")]),
+        ("FONTSIZE",    (0, 0), (-1, -1),  8),
+        ("GRID",        (0, 0), (-1, -1),  0.5, colors.lightgrey),
+        ("VALIGN",      (0, 0), (-1, -1),  "MIDDLE"),
+        ("PADDING",     (0, 0), (-1, -1),  5),
+        # Fila vacía (0,0) → celda en blanco
+        ("TEXTCOLOR",   (0, 0), (0, 0),   AZUL_INSTITUCIONAL),
+    ]))
+    story.append(t_od)
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Motivo ────────────────────────────────────────────────────
+    story.append(Paragraph("Motivo del traslado", s_sub))
+    story.append(Paragraph(traslado.motivo or "—", s_normal))
+    if traslado.observacion:
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(f"<b>Observaciones:</b> {traslado.observacion}", s_normal))
+    story.append(Spacer(1, 0.8 * cm))
+
+    # ── Firmas ────────────────────────────────────────────────────
+    story.append(Paragraph("Conformidad y firmas", s_sub))
+    story.append(Spacer(1, 0.3 * cm))
+
+    resp_origen_nombre  = _n(traslado.responsable_origen, "nombre_completo")
+    resp_destino_nombre = _n(traslado.responsable_destino, "nombre_completo")
+    aprobado_nombre     = _n(traslado.aprobado_por, "nombre_completo")
+
+    _linea = "_" * 30
+    firma_data = [
+        [
+            Paragraph(f"{_linea}<br/><b>ENTREGADO POR</b><br/>{resp_origen_nombre}<br/>{_n(traslado.sede_origen)}", s_firma),
+            Paragraph(f"{_linea}<br/><b>RECIBIDO POR</b><br/>{resp_destino_nombre}<br/>{_n(traslado.sede_destino)}", s_firma),
+            Paragraph(f"{_linea}<br/><b>V°B° JEFE DE INFORMÁTICA</b><br/>{aprobado_nombre}", s_firma),
+        ]
+    ]
+    t_firma = Table(firma_data, colWidths=[5.5 * cm, 5.5 * cm, 6 * cm])
+    t_firma.setStyle(TableStyle([
+        ("VALIGN",  (0, 0), (-1, -1), "TOP"),
+        ("ALIGN",   (0, 0), (-1, -1), "CENTER"),
+        ("PADDING", (0, 0), (-1, -1), 10),
+    ]))
+    story.append(t_firma)
+
+    # ── Pie de página ─────────────────────────────────────────────
+    story.append(Spacer(1, 0.5 * cm))
+    story.append(HRFlowable(width="100%", thickness=1, color=AZUL_CLARO))
+    story.append(Spacer(1, 0.15 * cm))
+    story.append(
+        Paragraph(
+            f"Documento generado el {timezone.localtime().strftime('%d/%m/%Y %H:%M')} — Sistema SIGTIC",
+            s_pie,
+        )
+    )
+
+    doc.build(story)
+    return buffer.getvalue()

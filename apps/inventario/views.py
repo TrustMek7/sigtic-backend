@@ -6,17 +6,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.users.permissions import EsInformatica, EsJefe
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from apps.users.permissions import EsInformatica, EsJefe, _get_profile
 from .models import (
     Dispositivo, DispComputadora, DispImpresora, DispMonitor,
     DispPeriferico, DispRed, DispCamara, DispTelefono,
     BienBaja, BienBajaFoto, EstadoDispositivo,
+    Traslado, EstadoTraslado,
 )
 from .serializers import (
     DispositivoListSerializer, DispositivoDetailSerializer, DispositivoWriteSerializer,
     DispComputadoraSerializer, DispImpresoraSerializer, DispMonitorSerializer,
     DispPeripericoSerializer, DispRedSerializer, DispCamaraSerializer, DispTelefonoSerializer,
     BienBajaSerializer, BienBajaFotoSerializer,
+    TrasladoListSerializer, TrasladoDetailSerializer,
+    TrasladoWriteSerializer, TrasladoEstadoSerializer,
 )
 
 _SUBTABLA_MAP = {
@@ -202,3 +207,122 @@ class BienBajaFotoView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save(bien_baja=bien_baja)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+# ── Traslados ─────────────────────────────────────────────────────────────────
+
+class TrasladoListView(ListCreateAPIView):
+    """Lista traslados y crea uno nuevo."""
+    permission_classes = [IsAuthenticated, EsInformatica]
+
+    def get_serializer_class(self):
+        return TrasladoWriteSerializer if self.request.method == "POST" else TrasladoListSerializer
+
+    def get_queryset(self):
+        qs = Traslado.objects.select_related(
+            "dispositivo__tipo_dispositivo",
+            "sede_origen", "sede_destino",
+            "area_origen", "area_destino",
+            "solicitado_por",
+        )
+        params = self.request.query_params
+        if params.get("estado"):
+            qs = qs.filter(estado=params["estado"].upper())
+        if params.get("dispositivo"):
+            qs = qs.filter(dispositivo_id=params["dispositivo"])
+        if params.get("sede_destino"):
+            qs = qs.filter(sede_destino_id=params["sede_destino"])
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = TrasladoWriteSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        traslado = serializer.save()
+        return Response(TrasladoDetailSerializer(traslado).data, status=status.HTTP_201_CREATED)
+
+
+class TrasladoDetailView(APIView):
+    """Detalle de un traslado y cambio de estado."""
+    permission_classes = [IsAuthenticated, EsInformatica]
+
+    def _get_traslado(self, pk):
+        return get_object_or_404(
+            Traslado.objects.select_related(
+                "dispositivo__tipo_dispositivo", "dispositivo__marca",
+                "sede_origen", "area_origen", "subger_origen", "depend_origen", "responsable_origen",
+                "sede_destino", "area_destino", "subger_destino", "depend_destino", "responsable_destino",
+                "solicitado_por", "aprobado_por",
+            ),
+            pk=pk,
+        )
+
+    def get(self, request, pk):
+        return Response(TrasladoDetailSerializer(self._get_traslado(pk)).data)
+
+    def patch(self, request, pk):
+        traslado = self._get_traslado(pk)
+
+        # Cambio de estado requiere ser jefe/admin
+        if "estado" in request.data:
+            if not (EsJefe().has_permission(request, self)):
+                return Response({"detail": "Solo el Jefe de Informática puede cambiar el estado."}, status=status.HTTP_403_FORBIDDEN)
+
+            ser = TrasladoEstadoSerializer(data=request.data)
+            ser.is_valid(raise_exception=True)
+            nuevo_estado = ser.validated_data["estado"]
+            obs_extra    = ser.validated_data.get("observacion", "")
+            profile      = _get_profile(request)
+
+            if traslado.estado in (EstadoTraslado.EJECUTADO, EstadoTraslado.RECHAZADO):
+                return Response({"detail": "El traslado ya está en estado terminal."}, status=status.HTTP_400_BAD_REQUEST)
+
+            from django.utils import timezone
+            if nuevo_estado == EstadoTraslado.APROBADO:
+                traslado.estado = EstadoTraslado.APROBADO
+                traslado.aprobado_por = profile
+                traslado.fecha_aprobacion = timezone.now()
+                if obs_extra:
+                    traslado.observacion = (traslado.observacion + "\n" + obs_extra).strip()
+                traslado.save(update_fields=["estado", "aprobado_por", "fecha_aprobacion", "observacion"])
+
+            elif nuevo_estado == EstadoTraslado.EJECUTADO:
+                traslado.ejecutar(aprobado_por=profile)
+
+            elif nuevo_estado == EstadoTraslado.RECHAZADO:
+                traslado.estado = EstadoTraslado.RECHAZADO
+                if obs_extra:
+                    traslado.observacion = (traslado.observacion + "\n" + obs_extra).strip()
+                traslado.save(update_fields=["estado", "observacion"])
+
+            return Response(TrasladoDetailSerializer(self._get_traslado(pk)).data)
+
+        # Edición libre de motivo/observacion (solo si aún PENDIENTE)
+        if traslado.estado != EstadoTraslado.PENDIENTE:
+            return Response({"detail": "Solo se puede editar un traslado en estado PENDIENTE."}, status=status.HTTP_400_BAD_REQUEST)
+
+        for field in ("motivo", "observacion"):
+            if field in request.data:
+                setattr(traslado, field, request.data[field])
+        traslado.save(update_fields=["motivo", "observacion"])
+        return Response(TrasladoDetailSerializer(self._get_traslado(pk)).data)
+
+
+class TrasladoPDFView(APIView):
+    """Genera el acta de traslado en PDF."""
+    permission_classes = [IsAuthenticated, EsInformatica]
+
+    def get(self, request, pk):
+        traslado = get_object_or_404(
+            Traslado.objects.select_related(
+                "dispositivo__tipo_dispositivo", "dispositivo__marca",
+                "sede_origen", "area_origen", "subger_origen", "depend_origen", "responsable_origen",
+                "sede_destino", "area_destino", "subger_destino", "depend_destino", "responsable_destino",
+                "solicitado_por", "aprobado_por",
+            ),
+            pk=pk,
+        )
+        from apps.documentos.pdf_generator import generar_pdf_traslado
+        pdf_bytes = generar_pdf_traslado(traslado)
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="traslado-{traslado.numero}.pdf"'
+        return response

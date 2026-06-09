@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     DispositivoListView, DispositivoDetailView, SubtablaView,
     BienBajaListView, BienBajaDetailView, BienBajaFotoView,
+    TrasladoListView, TrasladoDetailView, TrasladoPDFView,
 )
 
 urlpatterns = [
@@ -11,4 +12,8 @@ urlpatterns = [
     path("bajas/", BienBajaListView.as_view(), name="bienbaja-list"),
     path("bajas/<int:pk>/", BienBajaDetailView.as_view(), name="bienbaja-detail"),
     path("bajas/<int:pk>/fotos/", BienBajaFotoView.as_view(), name="bienbaja-foto"),
+    # Traslados
+    path("traslados/", TrasladoListView.as_view(), name="traslado-list"),
+    path("traslados/<int:pk>/", TrasladoDetailView.as_view(), name="traslado-detail"),
+    path("traslados/<int:pk>/pdf/", TrasladoPDFView.as_view(), name="traslado-pdf"),
 ]

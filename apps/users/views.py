@@ -20,6 +20,42 @@ from .serializers import (
     RolUpdateSerializer,
 )
 
+class UsuariosDelegablesView(ListAPIView):
+    """GET → usuarios con rol TECNICO o ENCARGADO_INFO activos (sin paginación)."""
+    permission_classes = [IsAuthenticated, EsJefe]
+    serializer_class = UserProfileListSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return UserProfile.objects.filter(
+            rol__in=[RolSigtic.TECNICO, RolSigtic.ENCARGADO_INFO],
+            activo=True,
+        ).order_by("nombre_completo")
+
+
+class EncargadoActivoView(APIView):
+    """GET → encargado activo actual (o 204). DELETE → retoma cargo (solo jefe)."""
+
+    def get_permissions(self):
+        if self.request.method == "DELETE":
+            return [IsAuthenticated(), EsJefe()]
+        return [IsAuthenticated()]
+
+    def get(self, request):
+        enc = EncargadoActivo.get_activo()
+        if enc is None:
+            return Response(None, status=status.HTTP_204_NO_CONTENT)
+        return Response(EncargadoActivoSerializer(enc).data)
+
+    def delete(self, request):
+        enc = EncargadoActivo.get_activo()
+        if enc is None:
+            return Response({"detail": "No hay encargado activo."}, status=status.HTTP_404_NOT_FOUND)
+        enc.activo = False
+        enc.hasta = timezone.now()
+        enc.save(update_fields=["activo", "hasta"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 def _set_tokens_in_cookies(response, refresh):
     access = refresh.access_token
@@ -190,12 +226,15 @@ class UserProfileListView(ListAPIView):
 
     def get_queryset(self):
         qs = UserProfile.objects.select_related("cargo_principal").order_by("nombre_completo")
-        activo = self.request.query_params.get("activo")
-        rol = self.request.query_params.get("rol")
-        if activo is not None:
-            qs = qs.filter(activo=activo.lower() in ("true", "1", "yes"))
-        if rol:
-            qs = qs.filter(rol=rol.upper())
+        p = self.request.query_params
+        if p.get("activo") is not None:
+            qs = qs.filter(activo=p["activo"].lower() in ("true", "1", "yes"))
+        if p.get("rol"):
+            qs = qs.filter(rol=p["rol"].upper())
+        if p.get("q"):
+            from django.db.models import Q
+            q = p["q"].strip()
+            qs = qs.filter(Q(nombre_completo__icontains=q) | Q(dni__icontains=q))
         return qs
 
     def get_permissions(self):
@@ -217,13 +256,16 @@ class UserProfileDetailView(RetrieveUpdateAPIView):
 
     def get_serializer_class(self):
         if self.request.method in ("PATCH", "PUT"):
-            # Only allow rol update via this endpoint
             return RolUpdateSerializer
         return UserProfileSerializer
 
-    def get_serializer(self, *args, **kwargs):
-        kwargs["context"] = self.get_serializer_context()
-        return super().get_serializer(*args, **kwargs)
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        ser = RolUpdateSerializer(instance, data=request.data, partial=True,
+                                  context=self.get_serializer_context())
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(UserProfileListSerializer(instance).data)
 
 
 @extend_schema_view(
@@ -244,8 +286,9 @@ class EncargadoActivoListCreateView(APIView):
     def post(self, request):
         profile = _get_profile(request)
         data = request.data.copy()
-        data.setdefault("autorizado_por", profile.id)
-        data.setdefault("activo", True)
+        data["autorizado_por"] = profile.id
+        data["activo"] = True
+        data.setdefault("desde", timezone.now().isoformat())
 
         serializer = EncargadoActivoSerializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
